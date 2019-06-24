@@ -16,6 +16,8 @@ seed(1)
 set_random_seed(2)
 
 from data import get_training_data
+from dataframe import make_segmentation_dataframe
+import glob
 
 parser = argparse.ArgumentParser(description='Train the witness model.')
 parser.add_argument('-e', '--epochs', type=int, help='Number of epochs to run.')
@@ -55,7 +57,7 @@ def main():
     args = parser.parse_args()
 
     # Init wandb
-    run = wandb.init(tensorboard=True)
+    run = wandb.init()
     run.config.learning_rate = args.learning_rate or 1e-4
     run.config.num_epochs = args.epochs or 100
     run.config.steps_per_epoch = args.steps or 300
@@ -112,7 +114,11 @@ def main():
         write_graph=True,
         write_images=True)
 
-    callbacks = [model_checkpoint, wandb_callback, tensorboard_callback]
+    callbacks = [
+      model_checkpoint,
+      wandb_callback,
+#       tensorboard_callback,
+    ]
 
     model.fit_generator(
         training_data_generator,
@@ -123,7 +129,20 @@ def main():
         callbacks=callbacks)
 
     # Upload best model to W&B
+    
     wandb.save(model_path)
+    
+    all_imgs = glob.glob('data/all/images/*.jpg')
+    all_labels = [f.replace('/images/', '/labels/').replace('.jpg', '.png') for f in all_imgs]
+    
+    run.summary['results'] = make_segmentation_dataframe(
+      model,
+      all_imgs,
+      all_labels,
+      image_size=run.config.image_size,
+      loss_function=weighted_cross_entropy(run.config.beta),
+    )
+    
 
 if __name__ == '__main__':
     main()

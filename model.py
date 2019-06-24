@@ -1,6 +1,7 @@
 from keras.models import Model
 from keras.layers import Input, Conv2D, MaxPooling2D, Dropout, UpSampling2D, \
-    concatenate
+    concatenate, Lambda
+import keras.backend as K
 
 conv2d_args = dict(
     activation='relu',
@@ -43,8 +44,20 @@ def UpTier(conv_size):
         return final_layer
     return create_tier
 
+def rgb_to_yuv(img):
+    r = img[:,:,:,0:1]
+    g = img[:,:,:,1:2]
+    b = img[:,:,:,2:3]
+    
+    y = 0.299*r + 0.587*g + 0.114*b
+    u = -0.14713*r -0.28886*g + 0.436*b
+    v = 0.615*r - 0.51499*g - 0.10001*b
+    return K.concatenate([y,u,v])
+
 def unet(image_size):
     inputs = Input((image_size[0], image_size[1], 3))
+    
+    in_yuv = Lambda(rgb_to_yuv)(inputs)
 
     # 2 TIER
 
@@ -54,13 +67,13 @@ def unet(image_size):
     # up3 = UpTier(64)(down2, down1_across['conv'])
 
     # 3 TIER
+    
+#     down1, down1_across = DownTier(16, pool_size=(2, 2))(in_yuv)
+#     down2, down2_across = DownTier(32, dropout=0.5, pool_size=(2, 2))(down1)
+#     down3 = DownTier(64, dropout=0.5)(down2)[0]
 
-    down1, down1_across = DownTier(16, pool_size=(2, 2))(inputs)
-    down2, down2_across = DownTier(32, dropout=0.5, pool_size=(2, 2))(down1)
-    down3 = DownTier(64, dropout=0.5)(down2)[0]
-
-    up4 = UpTier(32)(down3, down2_across['drop'])
-    up5 = UpTier(16)(up4, down1_across['conv'])
+#     up4 = UpTier(32)(down3, down2_across['drop'])
+#     up5 = UpTier(16)(up4, down1_across['conv'])
 
     # 4 TIER
 
@@ -75,19 +88,19 @@ def unet(image_size):
 
     # 5 TIER
 
-    # down1, down1_across = DownTier(64, pool_size=(2, 2))(inputs)
-    # down2, down2_across = DownTier(128, pool_size=(2, 2))(down1)
-    # down3, down3_across = DownTier(256, pool_size=(2, 2))(down2)
-    # down4, down4_across = DownTier(512, dropout=0.5, pool_size=(2, 2))(down3)
-    # down5 = DownTier(1024, dropout=0.5)(down4)[0]
+    down1, down1_across = DownTier(16, pool_size=(2, 2))(in_yuv)
+    down2, down2_across = DownTier(32, pool_size=(2, 2))(down1)
+    down3, down3_across = DownTier(64, pool_size=(2, 2))(down2)
+    down4, down4_across = DownTier(128, dropout=0.5, pool_size=(2, 2))(down3)
+    down5 = DownTier(256, dropout=0.5)(down4)[0]
 
-    # up6 = UpTier(512)(down5, down4_across['drop'])
-    # up7 = UpTier(256)(up6, down3_across['conv'])
-    # up8 = UpTier(128)(up7, down2_across['conv'])
-    # up9 = UpTier(64)(up8, down1_across['conv'])
+    up6 = UpTier(128)(down5, down4_across['drop'])
+    up7 = UpTier(64)(up6, down3_across['conv'])
+    up8 = UpTier(32)(up7, down2_across['conv'])
+    up9 = UpTier(16)(up8, down1_across['conv'])
 
     # conv9 = Conv2D(2, 3, **conv2d_args)(up9)
 
-    conv10 = Conv2D(1, 1, activation='sigmoid')(up5)
+    conv10 = Conv2D(1, 1, activation='sigmoid')(up9)
 
     return Model(input=inputs, output=conv10)
